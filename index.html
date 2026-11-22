@@ -312,12 +312,30 @@ function load(seed){let d=null;if(seed&&seed.coins!==undefined)d=seed;else{try{d
 function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
 function later(fn,ms){const g=G;setTimeout(()=>{if(G===g&&g)fn()},ms)}
 
-let AC;
-function tone(f,d=.15,type='sine',when=0,vol=.16){if(!S.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();
-  const o=AC.createOscillator(),g=AC.createGain(),s=AC.currentTime+when;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(vol,s);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g);g.connect(AC.destination);o.start(s);o.stop(s+d)}catch(e){}}
+let AC,audioReady=false,VOICES=[];
+/* Phones only allow sound after a tap, and iPhones mute Web Audio when the silent switch is on. */
+function getAC(){if(!AC){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;AC=new C()}return AC}
+function unlockAudio(){
+  try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+  try{const ac=getAC();if(ac){if(ac.state!=='running')ac.resume();
+    if(!audioReady){const b=ac.createBuffer(1,1,22050),src=ac.createBufferSource();src.buffer=b;src.connect(ac.destination);src.start(0)}}}catch(e){}
+  try{if(!audioReady&&window.speechSynthesis){const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}catch(e){}
+  audioReady=true}
+['pointerdown','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&AC&&AC.state!=='running'){try{AC.resume()}catch(e){}}});
+function loadVoices(){try{VOICES=speechSynthesis.getVoices()||[]}catch(e){}}
+try{loadVoices();speechSynthesis.addEventListener('voiceschanged',loadVoices)}catch(e){}
+function voiceFor(lang){if(!VOICES.length)loadVoices();const L=lang.slice(0,2).toLowerCase();
+  return VOICES.find(v=>v.lang&&v.lang.replace('_','-').toLowerCase()===lang.toLowerCase())||VOICES.find(v=>v.lang&&v.lang.toLowerCase().startsWith(L))||(L==='he'?VOICES.find(v=>/^iw/i.test(v.lang||'')):null)}
+function tone(f,d=.15,type='sine',when=0,vol=.16){if(!S.sound)return;try{const ac=getAC();if(!ac)return;if(ac.state!=='running')ac.resume();
+  const o=ac.createOscillator(),g=ac.createGain(),s=ac.currentTime+.01+when;o.type=type;o.frequency.setValueAtTime(f,s);g.gain.setValueAtTime(.0001,ac.currentTime);g.gain.setValueAtTime(vol,s);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g);g.connect(ac.destination);o.start(s);o.stop(s+d+.02)}catch(e){}}
 const sfx={ok(){tone(660,.12);tone(880,.2,'sine',.1)},bad(){tone(170,.22,'triangle')},tap(){tone(440,.06)},buy(){tone(784,.1);tone(1175,.28,'sine',.1)},win(){[523,659,784,1047].forEach((f,i)=>tone(f,.22,'sine',i*.13))}};
-function speak(txt){if(!S.sound||!txt)return;try{const u=new SpeechSynthesisUtterance(txt);u.lang=S.lang==='he'?'he-IL':'en-US';u.rate=.9;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
-
+let speakT;
+function speak(txt){if(!S.sound||!txt||!window.speechSynthesis)return;try{
+  const lang=S.lang==='he'?'he-IL':'en-US',u=new SpeechSynthesisUtterance(txt),v=voiceFor(lang);u.lang=v?v.lang:lang;if(v)u.voice=v;u.rate=.9;
+  clearTimeout(speakT);const busy=speechSynthesis.speaking||speechSynthesis.pending;if(busy)speechSynthesis.cancel();
+  const go=()=>{try{speechSynthesis.resume();speechSynthesis.speak(u)}catch(e){}};
+  if(busy)speakT=setTimeout(go,120);else go()}catch(e){}}
 function heroHTML(){const h=item('hero',S.eq.hero)||SHOP.hero[0],g=c=>{const x=S.eq[c]&&item(c,S.eq[c]);return x?`<span class="${c}">${x[1]}</span>`:''};
   return `<span class="hero">${g('hat')}<span>${h[1]}</span>${g('pet')}${g('ride')}${g('toy')}</span>`}
 function starPts(){let p=[];for(let i=0;i<10;i++){const r=i%2?19:45,a=Math.PI*i/5-Math.PI/2;p.push((50+r*Math.cos(a)).toFixed(1)+','+(52+r*Math.sin(a)).toFixed(1))}return p.join(' ')}
